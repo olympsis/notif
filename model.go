@@ -1,7 +1,6 @@
 package service
 
 import (
-	"github.com/gorilla/mux"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sideshow/apns2"
 	"github.com/sirupsen/logrus"
@@ -10,7 +9,6 @@ import (
 type Service struct {
 	Client   *apns2.Client
 	Logger   *logrus.Logger
-	Router   *mux.Router
 	Database *pgxpool.Pool
 }
 

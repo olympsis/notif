@@ -3,7 +3,6 @@ module github.com/olympsis/notif
 go 1.20
 
 require (
-	github.com/gorilla/mux v1.8.0
 	github.com/jackc/pgx/v5 v5.3.1
 	github.com/sideshow/apns2 v0.23.0
 	github.com/sirupsen/logrus v1.9.3

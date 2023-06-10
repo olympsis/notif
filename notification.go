@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sideshow/apns2"
@@ -16,8 +15,8 @@ import (
 /*
 Create new field service struct
 */
-func NewNotificationService(l *logrus.Logger) *Service {
-	return &Service{Logger: l}
+func NewNotificationService(l *logrus.Logger, db *pgxpool.Pool) *Service {
+	return &Service{Logger: l, Database: db}
 }
 
 /*
@@ -32,22 +31,9 @@ func (p *Service) CreateNewClient() {
 	p.Client = apns2.NewClient(cert).Development()
 }
 
-func (s *Service) ConnectToDatabase() {
-	user := os.Getenv("POSTGRES_USER")
-	password := os.Getenv("POSTGRES_PASSWORD")
-	addr := os.Getenv("DB_ADDR")
-	dbName := os.Getenv("TOPIC_DB_NAME")
-
-	connStr := "postgres://" + user + ":" + password + "@" + addr + "/" + dbName + "?sslmode=disable"
-	pool, err := pgxpool.New(context.Background(), connStr)
-	if err != nil {
-		s.Logger.Fatal("failed to connect to database ", err)
-	}
-
-	s.Database = pool
-	s.Logger.Info("Notification service established connection to database")
-}
-
+/*
+Create push note to apns
+*/
 func (s *Service) PushNote(t string, b string, tk string) error {
 	notification := &apns2.Notification{}
 	notification.DeviceToken = tk
