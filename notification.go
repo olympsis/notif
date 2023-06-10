@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -25,7 +26,22 @@ Create apns client from p12 file
 */
 func (p *Service) CreateNewClient() {
 	filePath := filepath.Join("files", "cert.p12 ")
-	cert, err := certificate.FromP12File(filePath, "")
+	file, err := os.Open(filePath)
+	if err != nil {
+		p.Logger.Fatal(err)
+	}
+	defer file.Close()
+
+	stat, err := file.Stat()
+	if err != nil {
+		p.Logger.Fatal(err)
+	}
+
+	fileSize := stat.Size()
+	content := make([]byte, fileSize)
+
+	// cert, err := certificate.FromP12File(filePath, "")
+	cert, err := certificate.FromP12Bytes(content, "")
 	if err != nil {
 		p.Logger.Fatal("token error:", err)
 	}
