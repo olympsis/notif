@@ -23,7 +23,7 @@ func NewNotificationService(l *logrus.Logger, db *pgxpool.Pool) *Service {
 Create apns client from p12 file
 */
 func (p *Service) CreateNewClient() {
-	cert, err := certificate.FromP12File("./pushnote/files/cert.p12", "")
+	cert, err := certificate.FromP12File("./files/cert.p12", "")
 	if err != nil {
 		p.Logger.Fatal("token error:", err)
 	}
