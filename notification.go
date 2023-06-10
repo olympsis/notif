@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sideshow/apns2"
@@ -23,7 +24,8 @@ func NewNotificationService(l *logrus.Logger, db *pgxpool.Pool) *Service {
 Create apns client from p12 file
 */
 func (p *Service) CreateNewClient() {
-	cert, err := certificate.FromP12File("/files/cert.p12", "")
+	filePath := filepath.Join("files", "cert.p12")
+	cert, err := certificate.FromP12File(filePath, "")
 	if err != nil {
 		p.Logger.Fatal("token error:", err)
 	}
