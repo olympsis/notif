@@ -1,4 +1,4 @@
-package service
+package notif
 
 import (
 	"github.com/jackc/pgx/v5/pgxpool"
