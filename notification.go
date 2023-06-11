@@ -1,4 +1,4 @@
-package service
+package notif
 
 import (
 	"context"
