@@ -7,8 +7,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sideshow/apns2"
-	"github.com/sideshow/apns2/certificate"
 	"github.com/sideshow/apns2/payload"
+	"github.com/sideshow/apns2/token"
 	"github.com/sirupsen/logrus"
 )
 
@@ -22,13 +22,20 @@ func NewNotificationService(l *logrus.Logger, db *pgxpool.Pool) *Service {
 /*
 Create apns client from p12 file
 */
-func (p *Service) CreateNewClient(fileName string) {
-	cert, err := certificate.FromP12File(fileName, "")
+func (p *Service) CreateNewClient(keyID string, teamID string, fileName string) error {
+	key, err := token.AuthKeyFromFile(fileName)
 	if err != nil {
-		p.Logger.Fatal("token error:", err)
+		return err
 	}
 
-	p.Client = apns2.NewClient(cert).Development()
+	token := token.Token{
+		AuthKey: key,
+		KeyID:   keyID,
+		TeamID:  teamID,
+	}
+
+	p.Client = apns2.NewTokenClient(&token).Production()
+	return nil
 }
 
 /*
@@ -164,4 +171,24 @@ func (s *Service) DeleteTopic(name string) error {
 	_, err := s.Database.Exec(context.TODO(), deleteSmt)
 
 	return err
+}
+
+/*
+Update User token across all topics
+*/
+func (s *Service) UpdateUserToken(uuid string, topics []string, token string) error {
+
+	// update topics with the new token
+	for _, t := range topics {
+		updateStmt := fmt.Sprintf(`
+			UPDATE "%s"
+			SET token=$1
+			WHERE uuid=$2`, t)
+		_, err := s.Database.Exec(context.TODO(), updateStmt, token, uuid)
+		if err != nil {
+			s.Logger.Error(err.Error())
+		}
+	}
+
+	return nil
 }
