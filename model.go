@@ -4,12 +4,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sideshow/apns2"
 	"github.com/sirupsen/logrus"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 type Service struct {
 	Client   *apns2.Client
 	Logger   *logrus.Logger
 	Database *pgxpool.Pool
+	Users    *mongo.Collection
 }
 
 type Notification struct {

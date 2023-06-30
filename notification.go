@@ -6,17 +6,20 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/olympsis/models"
 	"github.com/sideshow/apns2"
 	"github.com/sideshow/apns2/payload"
 	"github.com/sideshow/apns2/token"
 	"github.com/sirupsen/logrus"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 /*
 Create new field service struct
 */
-func NewNotificationService(l *logrus.Logger, db *pgxpool.Pool) *Service {
-	return &Service{Logger: l, Database: db}
+func NewNotificationService(l *logrus.Logger, db *pgxpool.Pool, c *mongo.Collection) *Service {
+	return &Service{Logger: l, Database: db, Users: c}
 }
 
 /*
@@ -93,8 +96,7 @@ Create a topic
 func (s *Service) CreateTopic(name string) error {
 	createStmt := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s" (
 		ID SERIAL PRIMARY KEY, 
-		uuid VARCHAR(50),
-		token VARCHAR(100)
+		uuid VARCHAR(50)
 	)`, name)
 
 	_, err := s.Database.Query(context.TODO(), createStmt)
@@ -106,7 +108,7 @@ func (s *Service) CreateTopic(name string) error {
 Get a topic
 */
 func (s *Service) GetTopic(name string) (Topic, error) {
-	queryStmt := fmt.Sprintf(`SELECT uuid, token FROM "%s"`, name)
+	queryStmt := fmt.Sprintf(`SELECT uuid FROM "%s"`, name)
 	rows, err := s.Database.Query(context.TODO(), queryStmt)
 	if err != nil {
 		return Topic{}, err
@@ -116,14 +118,18 @@ func (s *Service) GetTopic(name string) (Topic, error) {
 	var tokens []Token
 	for rows.Next() {
 		var ud string
-		var tk string
-		err = rows.Scan(&ud, &tk)
+		err = rows.Scan(&ud)
 		if err != nil {
 			return Topic{}, err
 		}
+
+		// fetch user token
+		var user models.User
+		s.FindUser(ud, &user)
+
 		token := Token{
 			UUID:  ud,
-			Token: tk,
+			Token: user.DeviceToken,
 		}
 		tokens = append(tokens, token)
 	}
@@ -138,24 +144,24 @@ func (s *Service) GetTopic(name string) (Topic, error) {
 /*
 Add tokens to a topic
 */
-func (s *Service) AddTokenToTopic(name string, uuid string, token string) error {
+func (s *Service) AddTokenToTopic(name string, uuid string) error {
 
-	insertStmt := fmt.Sprintf(`INSERT INTO "%s" (uuid, token) VALUES ($1, $2)`, name)
+	insertStmt := fmt.Sprintf(`INSERT INTO "%s" (uuid) VALUES ($1)`, name)
 
 	// add token to topic table
-	_, err := s.Database.Exec(context.TODO(), insertStmt, uuid, token)
+	_, err := s.Database.Exec(context.TODO(), insertStmt, uuid)
 
 	return err
 }
 
 /*
-Remove token from topic
+Remove user from topic
 */
-func (s *Service) RemoveTokenFromTopic(name string, token string) error {
-	updateStmt := fmt.Sprintf(`DELETE FROM "%s" WHERE token=$1`, name)
+func (s *Service) RemoveTokenFromTopic(name string, uuid string) error {
+	updateStmt := fmt.Sprintf(`DELETE FROM "%s" WHERE uuid=$1`, name)
 
 	// remove entry from table
-	_, err := s.Database.Exec(context.TODO(), updateStmt, token)
+	_, err := s.Database.Exec(context.TODO(), updateStmt, uuid)
 	if err != nil {
 		return err
 	}
@@ -174,21 +180,9 @@ func (s *Service) DeleteTopic(name string) error {
 }
 
 /*
-Update User token across all topics
+Get User Data to fetch token
 */
-func (s *Service) UpdateUserToken(uuid string, topics []string, token string) error {
-
-	// update topics with the new token
-	for _, t := range topics {
-		updateStmt := fmt.Sprintf(`
-			UPDATE "%s"
-			SET token=$1
-			WHERE uuid=$2`, t)
-		_, err := s.Database.Exec(context.TODO(), updateStmt, token, uuid)
-		if err != nil {
-			s.Logger.Error(err.Error())
-		}
-	}
-
+func (s *Service) FindUser(uuid string, user *models.User) error {
+	s.Users.FindOne(context.TODO(), bson.M{"uuid": uuid}).Decode(&user)
 	return nil
 }
