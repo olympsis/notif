@@ -1,7 +1,6 @@
 package notif
 
 import (
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sideshow/apns2"
 	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -10,7 +9,7 @@ import (
 type Service struct {
 	Client   *apns2.Client
 	Logger   *logrus.Logger
-	Database *pgxpool.Pool
+	Database *mongo.Collection
 	Users    *mongo.Collection
 }
 
@@ -23,11 +22,6 @@ type Notification struct {
 }
 
 type Topic struct {
-	Name   string  `json:"name"`
-	Tokens []Token `json:"tokens"`
-}
-
-type Token struct {
-	UUID  string
-	Token string
+	Name  string   `json:"name" bson:"name"`
+	Users []string `json:"users" bson:"users"`
 }

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/olympsis/models"
 	"github.com/sideshow/apns2"
 	"github.com/sideshow/apns2/payload"
@@ -17,9 +16,12 @@ import (
 
 /*
 Create new field service struct
+  - l: logger for debugging
+  - db: notifications database
+  - users: main server users database
 */
-func NewNotificationService(l *logrus.Logger, db *pgxpool.Pool, c *mongo.Collection) *Service {
-	return &Service{Logger: l, Database: db, Users: c}
+func NewNotificationService(l *logrus.Logger, db *mongo.Collection, users *mongo.Collection) *Service {
+	return &Service{Logger: l, Database: db, Users: users}
 }
 
 /*
@@ -84,8 +86,15 @@ func (s *Service) SendNotificationToTopic(note *Notification) error {
 	if err != nil {
 		return err
 	}
-	for i := range topic.Tokens {
-		s.PushNote(note.Title, note.Body, topic.Tokens[i].Token)
+	users, err := s.FindUsers(topic.Users)
+	if err != nil {
+		return err
+	}
+	if len(users) == 0 {
+		return errors.New("no users found")
+	}
+	for i := range users {
+		s.PushNote(note.Title, note.Body, users[i].DeviceToken)
 	}
 	return nil
 }
@@ -94,74 +103,11 @@ func (s *Service) SendNotificationToTopic(note *Notification) error {
 Create a topic
 */
 func (s *Service) CreateTopic(name string) error {
-	createStmt := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s" (
-		ID SERIAL PRIMARY KEY, 
-		uuid VARCHAR(50)
-	)`, name)
-
-	_, err := s.Database.Query(context.TODO(), createStmt)
-
-	return err
-}
-
-/*
-Get a topic
-*/
-func (s *Service) GetTopic(name string) (Topic, error) {
-	queryStmt := fmt.Sprintf(`SELECT uuid FROM "%s"`, name)
-	rows, err := s.Database.Query(context.TODO(), queryStmt)
-	if err != nil {
-		return Topic{}, err
-	}
-	defer rows.Close()
-
-	var tokens []Token
-	for rows.Next() {
-		var ud string
-		err = rows.Scan(&ud)
-		if err != nil {
-			return Topic{}, err
-		}
-
-		// fetch user token
-		var user models.User
-		s.FindUser(ud, &user)
-
-		token := Token{
-			UUID:  ud,
-			Token: user.DeviceToken,
-		}
-		tokens = append(tokens, token)
-	}
-
 	topic := Topic{
-		Name:   name,
-		Tokens: tokens,
+		Name:  name,
+		Users: []string{},
 	}
-	return topic, nil
-}
-
-/*
-Add tokens to a topic
-*/
-func (s *Service) AddTokenToTopic(name string, uuid string) error {
-
-	insertStmt := fmt.Sprintf(`INSERT INTO "%s" (uuid) VALUES ($1)`, name)
-
-	// add token to topic table
-	_, err := s.Database.Exec(context.TODO(), insertStmt, uuid)
-
-	return err
-}
-
-/*
-Remove user from topic
-*/
-func (s *Service) RemoveTokenFromTopic(name string, uuid string) error {
-	updateStmt := fmt.Sprintf(`DELETE FROM "%s" WHERE uuid=$1`, name)
-
-	// remove entry from table
-	_, err := s.Database.Exec(context.TODO(), updateStmt, uuid)
+	_, err := s.Database.InsertOne(context.Background(), topic)
 	if err != nil {
 		return err
 	}
@@ -170,19 +116,94 @@ func (s *Service) RemoveTokenFromTopic(name string, uuid string) error {
 }
 
 /*
-Delete a topic
+Get a topic
 */
-func (s *Service) DeleteTopic(name string) error {
-	deleteSmt := fmt.Sprintf(`DROP TABLE IF EXISTS "%s"`, name)
-	_, err := s.Database.Exec(context.TODO(), deleteSmt)
+func (s *Service) GetTopic(name string) (Topic, error) {
+	filter := bson.M{
+		"name": name,
+	}
+	var topic Topic
+	err := s.Database.FindOne(context.Background(), filter).Decode(&topic)
+	if err != nil {
+		return Topic{}, err
+	}
 
-	return err
+	return topic, nil
 }
 
 /*
-Get User Data to fetch token
+Add tokens to a topic
 */
-func (s *Service) FindUser(uuid string, user *models.User) error {
-	s.Users.FindOne(context.TODO(), bson.M{"uuid": uuid}).Decode(&user)
+func (s *Service) AddTokenToTopic(name string, uuid string) error {
+	filter := bson.M{
+		"name": name,
+	}
+	changes := bson.M{
+		"$push": bson.M{
+			"users": uuid,
+		},
+	}
+	_, err := s.Database.UpdateOne(context.Background(), filter, changes)
+	if err != nil {
+		return err
+	}
 	return nil
+}
+
+/*
+Remove user from topic
+*/
+func (s *Service) RemoveTokenFromTopic(name string, uuid string) error {
+	filter := bson.M{
+		"name": name,
+	}
+	changes := bson.M{
+		"$pull": bson.M{
+			"users": uuid,
+		},
+	}
+	_, err := s.Database.UpdateOne(context.Background(), filter, changes)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+/*
+Delete a topic
+*/
+func (s *Service) DeleteTopic(name string) error {
+	filter := bson.M{"name": name}
+	_, err := s.Database.DeleteOne(context.Background(), filter)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+/*
+Get Users Data to fetch token
+*/
+func (s *Service) FindUsers(arr []string) ([]models.User, error) {
+	filter := bson.M{
+		"uuid": bson.M{
+			"$in": arr,
+		},
+	}
+	cursor, err := s.Users.Find(context.Background(), filter)
+	if err != nil {
+		return []models.User{}, err
+	}
+
+	var users []models.User
+	for cursor.Next(context.Background()) {
+		var user models.User
+		err := cursor.Decode(&user)
+		if err != nil {
+			s.Logger.Error("Failed to decode user!")
+		}
+		users = append(users, user)
+	}
+
+	return users, nil
 }

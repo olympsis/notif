@@ -2,143 +2,134 @@ package notif
 
 import (
 	"context"
-	"os"
+	"fmt"
 	"testing"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sirupsen/logrus"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-var keyID string = ""
-var teamID string = ""
-var fileName string = ""
+var KEYID string = ""
+var TEAMID string = ""
+var FILENAME string = ""
 
-var user string = ""
-var password string = ""
-var addr string = ""
-var dbName string = ""
+var SERVER_USR = ""
+var SERVER_PASS = ""
+var SERVER_LOC = ""
+var SERVER_DB = "olympsis"
+var USERS_COL = "users"
 
-var DB_USR = ""
-var DB_PASS = ""
-var DB_NAME = ""
+var NOTIF_USR = ""
+var NOTIF_PASS = ""
+var NOTIF_LOC = ""
+var NOTIF_DB = "notifications"
+var TOPICS_COL = "topics"
+
+var TEST_UUID = ""
+var TEST_TOKEN = ""
 
 func TestCreateClient(t *testing.T) {
 	l := logrus.New()
-
-	// sql database connection
-	poolStr := "postgres://" + user + ":" + password + "@" + addr + "/" + dbName + "?sslmode=disable"
-	pool, err := pgxpool.New(context.Background(), poolStr)
-	if err != nil {
-		t.Error("failed to connect to database: ", err.Error())
-		return
-	}
-
-	// document database connection
 	credential := options.Credential{
 		AuthSource: "admin",
-		Username:   DB_USR,
-		Password:   DB_PASS,
+		Username:   SERVER_USR,
+		Password:   SERVER_PASS,
 	}
-	dbLoc := os.Getenv("DB_ADDR")
-	opts := options.Client().ApplyURI("mongodb://" + dbLoc + ":27017")
+	opts := options.Client().ApplyURI("mongodb://" + SERVER_LOC + ":27017")
 	opts.Auth = &credential
-
 	client, _ := mongo.Connect(context.Background(), opts)
-	UserCol := client.Database(DB_NAME).Collection("users")
+	UserCol := client.Database(SERVER_DB).Collection(USERS_COL)
+
+	opts = options.Client().ApplyURI(`mongodb+srv://admin:` + NOTIF_PASS + `@database-2.pdjjqal.mongodb.net/?retryWrites=true&w=majority`)
+	client2, _ := mongo.Connect(context.Background(), opts)
+	Database := client2.Database(NOTIF_DB).Collection(TOPICS_COL)
 
 	// create notif service and client
-	n := NewNotificationService(l, pool, UserCol)
-	err = n.CreateNewClient("JN25FUC9X2", "5A6H49Q85D", "./AuthKey_JN25FUC9X2.p8")
+	n := NewNotificationService(l, Database, UserCol)
+	err := n.CreateNewClient(KEYID, TEAMID, FILENAME)
 	if err != nil {
 		t.Error("failed to create notif client: ", err.Error())
 	}
 }
 
-func TestSendNotificationToToken(t *testing.T) {
+func TestHappyPath(t *testing.T) {
 	l := logrus.New()
-
-	// sql database connection
-	poolStr := "postgres://" + user + ":" + password + "@" + addr + "/" + dbName + "?sslmode=disable"
-	pool, err := pgxpool.New(context.Background(), poolStr)
-	if err != nil {
-		t.Error("failed to connect to database: ", err.Error())
-		return
-	}
-
-	// document database connection
 	credential := options.Credential{
 		AuthSource: "admin",
-		Username:   DB_USR,
-		Password:   DB_PASS,
+		Username:   SERVER_USR,
+		Password:   SERVER_PASS,
 	}
-	dbLoc := os.Getenv("DB_ADDR")
-	opts := options.Client().ApplyURI("mongodb://" + dbLoc + ":27017")
+	opts := options.Client().ApplyURI("mongodb://" + SERVER_LOC + ":27017")
 	opts.Auth = &credential
-
 	client, _ := mongo.Connect(context.Background(), opts)
-	UserCol := client.Database(DB_NAME).Collection("users")
+	UserCol := client.Database(SERVER_DB).Collection(USERS_COL)
+
+	opts2 := options.Client().ApplyURI(`mongodb+srv://admin:` + NOTIF_PASS + `@` + NOTIF_LOC + `/?retryWrites=true&w=majority`)
+	client2, _ := mongo.Connect(context.Background(), opts2)
+	Database := client2.Database(NOTIF_DB).Collection(TOPICS_COL)
 
 	// create notif service and client
-	n := NewNotificationService(l, pool, UserCol)
-	err = n.CreateNewClient("JN25FUC9X2", "5A6H49Q85D", "./AuthKey_JN25FUC9X2.p8")
+	n := NewNotificationService(l, Database, UserCol)
+	err := n.CreateNewClient(KEYID, TEAMID, FILENAME)
 	if err != nil {
 		t.Error("failed to create notif client: ", err.Error())
 	}
 
-	// test notification to device
-	note := Notification{
-		Title: "Test Notification",
-		Body:  "This is a notification test",
-	}
-
-	// send notification to token
-	err = n.SendNotificationToToken(&note, "8f9348fc8ce61585b9ba805bd960dbeefac1015eb71dbefad50d3c94e4588adf")
+	// test create new topic
+	id := primitive.NewObjectID()
+	err = n.CreateTopic(id.Hex())
 	if err != nil {
-		t.Error("failed to send token: ", err.Error())
-	}
-}
-
-func TestSendNotificationToTopic(t *testing.T) {
-	l := logrus.New()
-
-	// sql database connection
-	poolStr := "postgres://" + user + ":" + password + "@" + addr + "/" + dbName + "?sslmode=disable"
-	pool, err := pgxpool.New(context.Background(), poolStr)
-	if err != nil {
-		t.Error("failed to connect to database: ", err.Error())
+		t.Error("failed to create topic: ", err.Error())
 		return
 	}
 
-	// document database connection
-	credential := options.Credential{
-		AuthSource: "admin",
-		Username:   DB_USR,
-		Password:   DB_PASS,
-	}
-	opts := options.Client().ApplyURI("mongodb://" + addr + ":27017")
-	opts.Auth = &credential
-
-	client, _ := mongo.Connect(context.Background(), opts)
-	UserCol := client.Database(DB_NAME).Collection("users")
-
-	// create notif service and client
-	n := NewNotificationService(l, pool, UserCol)
-	err = n.CreateNewClient(keyID, teamID, fileName)
+	// test adding token to topic
+	err = n.AddTokenToTopic(id.Hex(), TEST_UUID)
 	if err != nil {
-		t.Error("failed to create notif client: ", err.Error())
+		t.Error("failed to add token to topic: ", err.Error())
+		return
 	}
 
-	// test notification to device
+	// test notification to topic
 	note := Notification{
 		Title: "Test Notification",
-		Body:  "This is a notification test",
-		Topic: "64945010d69bf7890c997866",
+		Body:  "Happy Path Topic Test",
+		Topic: id.Hex(),
 	}
-
 	err = n.SendNotificationToTopic(&note)
 	if err != nil {
-		t.Error("failed to send token: ", err.Error())
+		t.Error("failed to send notification to topic: ", err.Error())
+		return
+	}
+
+	// test remove token from topic
+	err = n.RemoveTokenFromTopic(id.Hex(), TEST_UUID)
+	if err != nil {
+		t.Error("failed to remove token from topic: ", err.Error())
+	}
+
+	// test deleting topic
+	err = n.DeleteTopic(id.Hex())
+	if err != nil {
+		t.Error("failed to delete topic: ", err.Error())
+	}
+
+	note = Notification{
+		Title: "Test Notification",
+		Body:  "Happy Path Token Test",
+	}
+	err = n.SendNotificationToToken(&note, TEST_TOKEN)
+	if err != nil {
+		t.Error("failed to send notification to token: ", err.Error())
+	}
+
+	users, err := n.FindUsers([]string{TEST_UUID})
+	if err != nil {
+		t.Error("failed to find users: ", err.Error())
+	}
+	for i := range users {
+		fmt.Print(users[i].UUID)
 	}
 }
